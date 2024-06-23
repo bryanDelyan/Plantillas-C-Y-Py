@@ -1,0 +1,105 @@
+[comment encoding = UTF-8 /]
+[module generate('http://www.eclipse.org/uml2/5.0.0/UML')]
+
+[template public generateElement(element : NamedElement)]
+[comment @main/]
+[if element.oclIsKindOf(Class)]
+    [generateClass(element.oclAsType(Class))/]
+[else][if element.oclIsKindOf(Interface)]
+    [generateInterface(element.oclAsType(Interface))/]
+[/if][/if]
+[/template]
+
+[template public generateClass(variableClase : Class)]
+[file (variableClase.name.concat('.py'), false, 'UTF-8')]
+[for (superClase : Classifier | variableClase.general)]
+# Importar la superclase si está en otro archivo
+from [superClase.name.toLower()/] import [superClase.name/]
+[/for]
+
+[if (variableClase.isAbstract)]
+from abc import ABC, abstractmethod
+[/if]
+[for (asociacion : Property | variableClase.ownedAttribute->select(a | a.association->notEmpty()))]
+# Importar la clase asociada si está en otro archivo
+from [asociacion.type.name.toLower()/] import [asociacion.type.name/]
+[/for]
+
+class [variableClase.name/][if (not variableClase.superClass->isEmpty())]([variableClase.superClass->asSequence()->first().name/])[else][if (variableClase.isAbstract)](ABC)[/if][/if]:
+    def __init__(self,[if (not variableClase.ownedAttribute->isEmpty())/][variableClase.ownedAttribute->iterate(atributo; acumulado : String = '' | if acumulado.size() > 0 then acumulado.concat(', ').concat(atributo.name) else acumulado.concat(atributo.name) endif)/]):
+        [if (not variableClase.superClass->isEmpty())]
+        super().__init__([variableClase.superClass->asSequence()->first().ownedAttribute->iterate(atributo; acumulado : String = '' | if acumulado.size() > 0 then acumulado.concat(', ').concat(atributo.name) else acumulado.concat(atributo.name) endif)/])  # Llamada al constructor de la superclase
+        [/if]
+        [if (variableClase.ownedAttribute->isEmpty() and (variableClase.superClass->isEmpty() or variableClase.superClass->asSequence()->first().ownedAttribute->isEmpty()))]
+        pass
+        [else]
+        [for (atributo: Property | variableClase.ownedAttribute)]
+        self._[atributo.name/] = [atributo.name/]  # Inicializar atributos en el constructor
+        [/for]
+        [/if]
+
+    [for (operacion: Operation | variableClase.ownedOperation)]
+    [if (variableClase.isAbstract)]
+    @abstractmethod
+    [/if]
+    def [operacion.name/](self,[operacion.ownedParameter->iterate(param; acumulado : String = '' | acumulado.concat(', ').concat(param.name))/]):
+        pass
+    [/for]
+
+    [for (atributo: Property | variableClase.ownedAttribute->select(a | a.type <> variableClase))]
+    [if atributo.association->notEmpty()]
+    [if atributo.aggregation = AggregationKind::composite]
+    # Composición entre [variableClase.name/] y [atributo.type.name/]
+    def agregar_[atributo.name/](self, [atributo.type.name.toLower()/]):
+        self._[atributo.name/] = [atributo.type.name.toLower()/]  # Agregar objeto compuesto
+        [atributo.type.name.toLower()/].asociado = self  # Establecer referencia al contenedor
+        
+    def eliminar_[atributo.name/](self):
+        self._[atributo.name/].asociado = None  # Eliminar referencia al contenedor
+        self._[atributo.name/] = None  # Eliminar objeto compuesto
+        
+    [/if]
+    [if atributo.aggregation <> AggregationKind::composite]
+    # Agregación entre [variableClase.name/] y [atributo.type.name/]
+    [if atributo.association.memberEnd->size() > 1]
+    def agregar_[atributo.name/](self, [atributo.type.name.toLower()/]):
+        if not hasattr(self, '_[atributo.name/]'):
+            self._[atributo.name/] = [ '[]' /]
+        self._[atributo.name/].append([atributo.type.name.toLower()/])  # Agregar objeto asociado
+        
+    def eliminar_[atributo.name/](self, [atributo.type.name.toLower()/]):
+        self._[atributo.name/].remove([atributo.type.name.toLower()/])  # Eliminar objeto asociado
+        
+    [else]
+    def establecer_[atributo.name/](self, objeto_asociado):
+        self._[atributo.name/] = objeto_asociado  # Establecer objeto asociado
+        
+    def obtener_[atributo.name/](self):
+        return self._[atributo.name/]  # Obtener objeto asociado
+        
+    [/if]
+    [/if]
+    [/if]
+    [/for]
+
+[/file]
+[/template]
+
+[template public generateInterface(variableInterface : Interface)]
+[file (variableInterface.name.concat('.py'), false, 'UTF-8')]
+
+from abc import ABC, abstractmethod
+
+class [variableInterface.name/](ABC):
+    [if variableInterface.ownedOperation->isEmpty()]
+    pass
+    [else]
+    [for (operacion: Operation | variableInterface.ownedOperation)]
+    @abstractmethod
+    def [operacion.name/](self[operacion.ownedParameter->iterate(param; acumulado : String = '' | acumulado.concat(', ').concat(param.name))/]):
+        pass
+    [/for]
+    [/if]
+
+[/file]
+[/template]

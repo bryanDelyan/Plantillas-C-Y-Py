@@ -1,0 +1,161 @@
+[comment encoding = UTF-8 /]
+[module generate('http://www.eclipse.org/uml2/5.0.0/UML')]
+
+[query public obtenerTipoAsociacion(associationEnd : Property) : String = 
+    if associationEnd.type.oclIsUndefined() then 'Undefined'
+    else associationEnd.type.name
+    endif
+/]
+
+[query public obtenerTipoDato(atributo : Property) : String =
+    if atributo.type.oclIsUndefined() then
+        'Undefined'
+    else
+        atributo.type.name
+    endif
+/]
+
+[query public obtenerTipoDato(parametro : Parameter) : String =
+    if parametro.type.oclIsUndefined() then
+        'Undefined'
+    else
+        parametro.type.name
+    endif
+/]
+
+[template public generateElement(element : NamedElement)]
+[comment @main/]
+[if element.oclIsKindOf(Class) and not element.oclIsKindOf(Interface)]
+    [generateClass(element.oclAsType(Class))/]
+
+[else][if element.oclIsKindOf(Interface)]
+    [generateInterface(element.oclAsType(Interface))/]
+[/if]
+[/if]
+[/template]
+
+[template public generateClass(variableClase : Class)]
+[file (variableClase.name + '.cs', false, 'UTF-8')]
+using System;
+[if (variableClase.ownedAttribute->exists(a | a.association <> null))]
+using System.Collections.Generic;
+[/if]
+
+public class [variableClase.name/] 
+[if (not variableClase.generalization->isEmpty())]
+: [for (gen : Generalization | variableClase.generalization) separator (', ')]
+[gen.general.name/]
+[/for]
+[/if]
+{
+    [GenerarAtributos(variableClase)/]
+    [GenerarConstructorClase(variableClase)/]
+    [GenerarMetodos(variableClase)/]
+    
+    // Propiedades para las asociaciones y composiciones
+    [for (asociacion: Property | variableClase.ownedAttribute->select(a | a.association <> null))]
+        [if (asociacion.aggregation = 'composite' or asociacion.upper <> 1)]
+            public List<[obtenerTipoAsociacion(asociacion)/]> [asociacion.name/] { get; private set; }
+        [else]
+            public [obtenerTipoAsociacion(asociacion)/] [asociacion.name/] { get; private set; }
+        [/if]
+    [/for]  
+}
+[/file]
+[/template]
+
+[template public GenerarAtributos(variableClase : Class)]
+    // Propiedades para los atributos
+    [for (atributo:Property | variableClase.ownedAttribute->select(a | a.association = null)) separator ('\n')]
+        [if (atributo.visibility.toString() = 'public')]
+            public [obtenerTipoDato(atributo)/] [atributo.name/] { get; set; }
+        [/if]
+        [if (atributo.visibility.toString() = 'protected')]
+            protected [obtenerTipoDato(atributo)/] [atributo.name/] { get; set; }
+        [/if]
+        [if (atributo.visibility.toString() = 'private')]
+            private [obtenerTipoDato(atributo)/] [atributo.name/] { get; set; }
+        [/if]
+    [/for]
+[/template]
+
+[template public GenerarConstructorClase(variableClase : Class)]
+    // Constructor predeterminado
+    public [variableClase.name/]()
+    {
+        [for (asociacion: Property | variableClase.ownedAttribute->select(a | a.association <> null))]
+            [if (asociacion.aggregation = 'composite' or asociacion.upper <> 1)]
+                this.[asociacion.name/] = new List<[obtenerTipoAsociacion(asociacion)/]>();
+            [else]
+                this.[asociacion.name/] = null;
+            [/if]
+        [/for]
+    }
+
+    // Constructor con parámetros para inicializar todos los atributos
+    public [variableClase.name/]( [for (atributo:Property | variableClase.ownedAttribute->select(a | a.association = null)) separator (', ')] [obtenerTipoDato(atributo)/] [atributo.name/][/for] )
+    {
+        [for (atributo:Property | variableClase.ownedAttribute->select(a | a.association = null))]
+        this.[atributo.name/] = [atributo.name/];
+        [/for]
+        
+        [for (asociacion: Property | variableClase.ownedAttribute->select(a | a.association <> null))]
+            [if (asociacion.aggregation = 'composite' or asociacion.upper <> 1)]
+                this.[asociacion.name/] = new List<[obtenerTipoAsociacion(asociacion)/]>();
+            [else]
+                this.[asociacion.name/] = null;
+            [/if]
+        [/for]
+    }
+[/template]
+
+[template public GenerarMetodos(variableClase : Class)]
+    // Métodos de la clase
+    [for (metodo:Operation | variableClase.ownedOperation->sortedBy(o | o.name))]
+        [visibility(metodo)/] [if(metodo.type.oclIsUndefined())]void[else][metodo.type.name/][/if] [metodo.name/]([GenerarParametros(metodo)/])
+        {
+            // Cuerpo del método
+        }
+    [/for]
+[/template]
+
+[template public GenerarParametros(metodo : Operation)]
+    [for (parametro:Parameter | metodo.ownedParameter) separator (', ')]
+        [obtenerTipoDato(parametro)/] [parametro.name/]
+    [/for]
+[/template]
+
+[template public visibility(metodo : Operation)]
+    [if (metodo.visibility.toString() = 'public')]public[/if]
+    [if (metodo.visibility.toString() = 'protected')]protected[/if]
+    [if (metodo.visibility.toString() = 'private')]private[/if]
+[/template]
+
+[template public generateInterface(variableInterface : Interface)]
+[file ('I' + variableInterface.name + '.cs', false, 'UTF-8')]
+using System;
+
+public interface I[variableInterface.name/] [if not variableInterface.generalization->isEmpty()]: [for (gen : Generalization | variableInterface.generalization) separator (', ')]
+I[gen.general.name/]
+[/for]
+[/if]
+{
+    [GenerarMetodosInterface(variableInterface)/]
+    [GenerarPropiedadesInterface(variableInterface)/]
+}
+[/file]
+[/template]
+
+[template public GenerarMetodosInterface(variableInterface : Interface)]
+    // Métodos de la interfaz
+    [for (metodo:Operation | variableInterface.ownedOperation->sortedBy(o | o.name))]
+        [if(metodo.type.oclIsUndefined())]void[else][metodo.type.name/][/if] [metodo.name/]([GenerarParametros(metodo)/]);
+    [/for]
+[/template]
+
+[template public GenerarPropiedadesInterface(variableInterface : Interface)]
+    // Propiedades de la interfaz
+    [for (propiedad:Property | variableInterface.ownedAttribute) separator ('\n')]
+        [obtenerTipoDato(propiedad)/] [propiedad.name/] { get; set; }
+    [/for]
+[/template]
